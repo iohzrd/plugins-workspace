@@ -11,7 +11,7 @@ use sqlx::{
     migrate::{
         MigrateDatabase, Migration as SqlxMigration, MigrationSource, MigrationType, Migrator,
     },
-    Column, Pool, Row, TypeInfo,
+    Column, Pool, Row, TypeInfo, ValueRef,
 };
 use tauri::{
     command,
@@ -45,6 +45,8 @@ pub enum Error {
     Migration(#[from] sqlx::migrate::MigrateError),
     #[error("database {0} not loaded")]
     DatabaseNotLoaded(String),
+    #[error("unsupported datatype: {0}")]
+    UnsupportedDatatype(String),
 }
 
 impl Serialize for Error {
@@ -251,8 +253,11 @@ async fn select(
             let v = if info.is_null() {
                 JsonValue::Null
             } else {
+                // TODO: postgresql's JSON type
                 match info.name() {
-                    "VARCHAR" | "STRING" | "TEXT" | "DATETIME" | "JSON" => {
+                    "VARCHAR" | "STRING" | "TEXT" | "TINYTEXT" | "LONGTEXT" | "NVARCHAR"
+                    | "BIGVARCHAR" | "CHAR" | "BIGCHAR" | "NCHAR" | "DATETIME" | "DATE"
+                    | "TIME" | "YEAR" | "TIMESTAMP" => {
                         if let Ok(s) = row.try_get(i) {
                             JsonValue::String(s)
                         } else {
@@ -267,35 +272,41 @@ async fn select(
                             JsonValue::Bool(x.to_lowercase() == "true")
                         }
                     }
-                    "INT" | "NUMBER" | "INTEGER" | "BIGINT" | "INT8" => {
+                    "INT" | "NUMBER" | "INTEGER" | "BIGINT" | "INT2" | "INT4" | "INT8"
+                    | "NUMERIC" | "TINYINT" | "SMALLINT" | "MEDIUMINT" | "TINYINT UNSINGED"
+                    | "SMALLINT UNSINGED" | "INT UNSINGED" | "MEDIUMINT UNSINGED"
+                    | "BIGINT UNSINGED" => {
                         if let Ok(n) = row.try_get::<i64, usize>(i) {
                             JsonValue::Number(n.into())
                         } else {
                             JsonValue::Null
                         }
                     }
-                    "REAL" => {
+                    "REAL" | "FLOAT" | "DOUBLE" | "FLOAT4" | "FLOAT8" => {
                         if let Ok(n) = row.try_get::<f64, usize>(i) {
                             JsonValue::from(n)
                         } else {
                             JsonValue::Null
                         }
                     }
-                    // "JSON" => JsonValue::Object(row.get(i)),
-                    "BLOB" | "JSON" => {
+                    "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY"
+                    | "BYTEA" => {
                         if let Ok(s) = row.try_get(i) {
                             JsonFromValue(s).unwrap()
                         } else {
                             JsonValue::Null
                         }
                     }
-                    _ => JsonValue::Null,
+                    _ => return Err(Error::UnsupportedDatatype(info.name().to_string())),
                 }
             };
+
             value.insert(column.name().to_string(), v);
         }
+
         values.push(value);
     }
+
     Ok(values)
 }
 
