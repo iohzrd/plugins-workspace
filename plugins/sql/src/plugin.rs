@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use futures::future::BoxFuture;
+use futures_core::future::BoxFuture;
 use serde::{ser::Serializer, Deserialize, Serialize};
 use serde_json::from_value as JsonFromValue;
 use serde_json::Value as JsonValue;
@@ -11,7 +11,7 @@ use sqlx::{
     migrate::{
         MigrateDatabase, Migration as SqlxMigration, MigrationSource, MigrationType, Migrator,
     },
-    Column, Pool, Row, TypeInfo, ValueRef,
+    Column, Pool, Row,
 };
 use tauri::{
     command,
@@ -211,7 +211,9 @@ async fn execute(
     let db = instances.get_mut(&db).ok_or(Error::DatabaseNotLoaded(db))?;
     let mut query = sqlx::query(&query);
     for value in values {
-        if value.is_string() {
+        if value.is_null() {
+            query = query.bind(None::<JsonValue>);
+        } else if value.is_string() {
             query = query.bind(value.as_str().unwrap().to_owned())
         } else {
             query = query.bind(value);
@@ -238,7 +240,9 @@ async fn select(
     let db = instances.get_mut(&db).ok_or(Error::DatabaseNotLoaded(db))?;
     let mut query = sqlx::query(&query);
     for value in values {
-        if value.is_string() {
+        if value.is_null() {
+            query = query.bind(None::<JsonValue>);
+        } else if value.is_string() {
             query = query.bind(value.as_str().unwrap().to_owned())
         } else {
             query = query.bind(value);
