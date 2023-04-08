@@ -253,57 +253,9 @@ async fn select(
     for row in rows {
         let mut value = HashMap::default();
         for (i, column) in row.columns().iter().enumerate() {
-            let info = column.type_info();
-            let v = if info.is_null() {
-                JsonValue::Null
-            } else {
-                // TODO: postgresql's JSON type
-                match info.name() {
-                    "VARCHAR" | "STRING" | "TEXT" | "TINYTEXT" | "LONGTEXT" | "NVARCHAR"
-                    | "BIGVARCHAR" | "CHAR" | "BIGCHAR" | "NCHAR" | "DATETIME" | "DATE"
-                    | "TIME" | "YEAR" | "TIMESTAMP" => {
-                        if let Ok(s) = row.try_get(i) {
-                            JsonValue::String(s)
-                        } else {
-                            JsonValue::Null
-                        }
-                    }
-                    "BOOL" | "BOOLEAN" => {
-                        if let Ok(b) = row.try_get(i) {
-                            JsonValue::Bool(b)
-                        } else {
-                            let x: String = row.get(i);
-                            JsonValue::Bool(x.to_lowercase() == "true")
-                        }
-                    }
-                    "INT" | "NUMBER" | "INTEGER" | "BIGINT" | "INT2" | "INT4" | "INT8"
-                    | "NUMERIC" | "TINYINT" | "SMALLINT" | "MEDIUMINT" | "TINYINT UNSINGED"
-                    | "SMALLINT UNSINGED" | "INT UNSINGED" | "MEDIUMINT UNSINGED"
-                    | "BIGINT UNSINGED" => {
-                        if let Ok(n) = row.try_get::<i64, usize>(i) {
-                            JsonValue::Number(n.into())
-                        } else {
-                            JsonValue::Null
-                        }
-                    }
-                    "REAL" | "FLOAT" | "DOUBLE" | "FLOAT4" | "FLOAT8" => {
-                        if let Ok(n) = row.try_get::<f64, usize>(i) {
-                            JsonValue::from(n)
-                        } else {
-                            JsonValue::Null
-                        }
-                    }
-                    "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY"
-                    | "BYTEA" => {
-                        if let Ok(s) = row.try_get(i) {
-                            JsonFromValue(s).unwrap()
-                        } else {
-                            JsonValue::Null
-                        }
-                    }
-                    _ => return Err(Error::UnsupportedDatatype(info.name().to_string())),
-                }
-            };
+            let v = row.try_get_raw(i)?;
+
+            let v = crate::decode::to_json(v)?;
 
             value.insert(column.name().to_string(), v);
         }
