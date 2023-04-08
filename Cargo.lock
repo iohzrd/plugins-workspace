@@ -4530,7 +4530,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "thiserror",
- "windows-sys 0.45.0",
+ "windows-sys 0.48.0",
  "zbus",
 ]
 
