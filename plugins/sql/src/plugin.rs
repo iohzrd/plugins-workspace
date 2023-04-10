@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use futures_core::future::BoxFuture;
+use futures::future::BoxFuture;
 use serde::{ser::Serializer, Deserialize, Serialize};
 use serde_json::from_value as JsonFromValue;
 use serde_json::Value as JsonValue;
@@ -11,7 +11,7 @@ use sqlx::{
     migrate::{
         MigrateDatabase, Migration as SqlxMigration, MigrationSource, MigrationType, Migrator,
     },
-    Column, Pool, Row,
+    Column, Pool, Row, TypeInfo,
 };
 use tauri::{
     command,
@@ -253,10 +253,50 @@ async fn select(
     for row in rows {
         let mut value = HashMap::default();
         for (i, column) in row.columns().iter().enumerate() {
-            let v = row.try_get_raw(i)?;
-
-            let v = crate::decode::to_json(v)?;
-
+            let info = column.type_info();
+            let v = if info.is_null() {
+                JsonValue::Null
+            } else {
+                match info.name() {
+                    "VARCHAR" | "STRING" | "TEXT" | "DATETIME" | "JSON" => {
+                        if let Ok(s) = row.try_get(i) {
+                            JsonValue::String(s)
+                        } else {
+                            JsonValue::Null
+                        }
+                    }
+                    "BOOL" | "BOOLEAN" => {
+                        if let Ok(b) = row.try_get(i) {
+                            JsonValue::Bool(b)
+                        } else {
+                            let x: String = row.get(i);
+                            JsonValue::Bool(x.to_lowercase() == "true")
+                        }
+                    }
+                    "INT" | "NUMBER" | "INTEGER" | "BIGINT" | "INT8" => {
+                        if let Ok(n) = row.try_get::<i64, usize>(i) {
+                            JsonValue::Number(n.into())
+                        } else {
+                            JsonValue::Null
+                        }
+                    }
+                    "REAL" => {
+                        if let Ok(n) = row.try_get::<f64, usize>(i) {
+                            JsonValue::from(n)
+                        } else {
+                            JsonValue::Null
+                        }
+                    }
+                    "BLOB" | "JSON" => {
+                        if let Ok(s) = row.try_get(i) {
+                            JsonFromValue(s).unwrap()
+                        } else {
+                            JsonValue::Null
+                        }
+                    }
+                    _ => JsonValue::Null,
+                }
+            };
             value.insert(column.name().to_string(), v);
         }
 
